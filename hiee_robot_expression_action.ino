@@ -5,15 +5,14 @@
 #include "Adafruit_PWMServoDriver.h"
 #include "XT_DAC_Audio.h"
 #include "Wire.h"
-#include <WiFi.h>
 #include "hiee-audio.h"
 #include "expressionbitmap.h"
+#include <WiFi.h>
+#include <HTTP_Method.h>
+#include <WebServer.h>
 
-/* wifi confg */
-const char *ssid = " HIEE ";
-const char *password = "123456789";
-WiFiServer server(80);
-
+WiFiServer server(80); 
+WiFiClient client;
 /* Called this way, it uses the default address 0x40 */
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
 
@@ -29,23 +28,15 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);  /* Declaratio
 
 XT_DAC_Audio_Class DacAudio(25, 0);   /* Create the main player class object */
 /* Use GPIO 25, one of the 2 DAC pins and timer 0  */
- String data;
+
+const char* ssid = "HIEE";
+const char* password = "12345678";
+String data;
 
 void setup()
 {
   Serial.begin(115200);
   Serial.println("GPIO test!");
-    // Connect to Wi-Fi
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.println("Connecting to WiFi...");
-  }
-  
-  Serial.println("Connected to WiFi");
-  // Start the server
-  server.begin();
-  
   //pwm-servo-begin
   pwm.begin();
   pwm.setPWMFreq(frequency);
@@ -58,6 +49,45 @@ void setup()
   initial_exp(); /* Initial face expression */
   initial_position(); /* Initial position */
   delay(2000);
+  
+  connectToWiFi();
+  server.begin();
+  Serial.println("Server started");
+}
+/*connect to wifi */
+void connectToWiFi() {
+  delay(3000);
+  WiFi.disconnect();
+  Serial.println("Connecting to WiFi");
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("Connected"); 
+  Serial.println("Local IP is: ");
+  Serial.print(WiFi.localIP());
+  Serial.println("\n");
+  delay(5000);
+}
+/* handel */
+void handleRequest() {
+  if (data.indexOf("GET /?data=") != -1) {
+    int startIndex = data.indexOf("=") + 1;
+    int endIndex = data.indexOf(" HTTP");
+
+    String key = data.substring(startIndex, endIndex);
+    Serial.println(key);
+  }
+
+  WiFiClient client = server.available();
+  if (client) {
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: text/html");
+    client.println();
+    delay(1);
+    client.stop();
+  }
 }
 /* moving method */
 void setServo(int servo, int angle) {
@@ -93,26 +123,31 @@ void initial_position() {
 }
 
 void loop(){
-  // Check if a client has connected
+   connectToWiFi();
+
+  server.begin();
+  Serial.println("Server started");
   WiFiClient client = server.available();
+
   if (client) {
-    Serial.println("New client connected");
-    
-    // Read the data from the client
-    data = client.readStringUntil('\r');
-    Serial.println("Received data: " + data);
+    while (client.connected()) {
+      if (client.available()) {
+        char c = client.read();
+        data += c;
+        if (c == '\n') {
+          break;
+        }
+      }
+    }
 
-    // You can process the text data here
-
-    // Send a response to the client
-    client.println("HTTP/1.1 200 OK");
-    client.println("Content-type:text/html");
-    client.println();
-    client.println("Data received successfully!");
-    
-    // Close the connection
-    client.stop();
+    if (data.length() > 0) {
+      handleRequest();
+      data = "";
+      client.stop();
+    }
   }
+
+  delay(10);
   
   if (data != ""){
       if (data.equalsIgnoreCase("hi")|| data.equalsIgnoreCase("hello")) {
